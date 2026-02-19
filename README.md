@@ -2,9 +2,45 @@
 
 Store SSH server credentials with encrypted passwords, connect by server name.
 
-## Build
+## Install
+
+### macOS (Homebrew)
 
 ```bash
+brew install chenyhd/tap/essh
+```
+
+### Linux (deb)
+
+```bash
+# Download the latest .deb from GitHub Releases
+curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_linux_amd64.deb
+sudo dpkg -i essh_linux_amd64.deb
+```
+
+### Linux (rpm)
+
+```bash
+# Download the latest .rpm from GitHub Releases
+curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_linux_amd64.rpm
+sudo rpm -i essh_linux_amd64.rpm
+```
+
+### Windows
+
+Download the `.zip` from [GitHub Releases](https://github.com/chenyhd/essh/releases) and add `essh.exe` to your PATH.
+
+### From source
+
+```bash
+go install github.com/chenyhd/essh@latest
+```
+
+Or build manually:
+
+```bash
+git clone https://github.com/chenyhd/essh.git
+cd essh
 go build -o essh .
 ```
 
