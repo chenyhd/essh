@@ -20,6 +20,7 @@ type Server struct {
 
 // Store represents the essh-storage.json file.
 type Store struct {
+	Version      int      `json:"version"`
 	Salt         string   `json:"salt"`
 	Verification string   `json:"verification"`
 	Servers      []Server `json:"servers"`
@@ -39,7 +40,9 @@ func Load(path string) (*Store, error) {
 }
 
 // Save writes the storage to the given path.
+// Version is auto-incremented on each save.
 func Save(path string, store *Store) error {
+	store.Version++
 	data, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling storage: %w", err)
@@ -48,12 +51,13 @@ func Save(path string, store *Store) error {
 }
 
 // Init creates a new storage file with the given encryption password.
-func Init(path string, encPassword string) error {
+// If keyfile is provided, it is mixed into key derivation.
+func Init(path string, encPassword string, keyfile []byte) error {
 	salt, err := crypto.GenerateSalt()
 	if err != nil {
 		return err
 	}
-	key := crypto.DeriveKey(encPassword, salt)
+	key := crypto.DeriveKey(encPassword, salt, keyfile)
 	verification, err := crypto.Encrypt(key, crypto.VerifyStr)
 	if err != nil {
 		return fmt.Errorf("encrypting verification: %w", err)
@@ -72,12 +76,13 @@ func (s *Store) GetSalt() ([]byte, error) {
 }
 
 // VerifyPassword checks if the encryption password is correct.
-func (s *Store) VerifyPassword(encPassword string) ([]byte, error) {
+// If keyfile is provided, it is mixed into key derivation.
+func (s *Store) VerifyPassword(encPassword string, keyfile []byte) ([]byte, error) {
 	salt, err := s.GetSalt()
 	if err != nil {
 		return nil, fmt.Errorf("decoding salt: %w", err)
 	}
-	key := crypto.DeriveKey(encPassword, salt)
+	key := crypto.DeriveKey(encPassword, salt, keyfile)
 	plaintext, err := crypto.Decrypt(key, s.Verification)
 	if err != nil {
 		return nil, fmt.Errorf("wrong encryption password")

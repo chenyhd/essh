@@ -27,8 +27,13 @@ func GenerateSalt() ([]byte, error) {
 }
 
 // DeriveKey uses Argon2id to derive a 32-byte AES key from a password and salt.
-func DeriveKey(password string, salt []byte) []byte {
-	return argon2.IDKey([]byte(password), salt, 1, 64*1024, 4, KeyLen)
+// If keyfile is provided, it is appended to the password before derivation.
+func DeriveKey(password string, salt []byte, keyfile []byte) []byte {
+	input := []byte(password)
+	if len(keyfile) > 0 {
+		input = append(input, keyfile...)
+	}
+	return argon2.IDKey(input, salt, 1, 64*1024, 4, KeyLen)
 }
 
 // Encrypt encrypts plaintext using AES-256-GCM with a random nonce.

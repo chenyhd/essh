@@ -13,6 +13,7 @@ const configFile = "config.json"
 // Config represents the ~/.essh/config.json file.
 type Config struct {
 	StoragePath string `json:"storage_path"`
+	KeyfilePath string `json:"keyfile_path,omitempty"`
 }
 
 // Dir returns the path to ~/.essh/.
