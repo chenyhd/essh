@@ -36,6 +36,8 @@ func main() {
 		err = cmdEdit()
 	case "passwd":
 		err = cmdPasswd()
+	case "scp":
+		err = cmdScp()
 	case "completion":
 		err = cmdCompletion()
 	case "--names":
@@ -63,6 +65,7 @@ Usage:
   essh rename <old> <new>      Rename a saved server
   essh edit <name>             Edit a saved server
   essh passwd                  Change encryption password
+  essh scp <src> <dst>         Copy files (use <name>:/path for remote)
   essh completion              Output shell completion script (bash/zsh)
   essh <name>                  Connect to a saved server
 
@@ -463,7 +466,7 @@ func cmdCompletion() error {
 const bashCompletion = `_essh() {
     local cur commands
     cur="${COMP_WORDS[COMP_CWORD]}"
-    commands="init add list remove rename edit passwd completion help"
+    commands="init add list remove rename edit passwd scp completion help"
 
     if [ "$COMP_CWORD" -eq 1 ]; then
         local names
@@ -475,6 +478,14 @@ const bashCompletion = `_essh() {
                 local names
                 names=$(essh --names 2>/dev/null)
                 COMPREPLY=($(compgen -W "$names" -- "$cur"))
+                ;;
+            scp)
+                local names
+                names=$(essh --names 2>/dev/null)
+                local colon_names=""
+                for n in $names; do colon_names="$colon_names $n:"; done
+                COMPREPLY=($(compgen -W "$colon_names" -- "$cur"))
+                compopt -o nospace
                 ;;
         esac
     fi
@@ -494,6 +505,7 @@ _essh() {
         'rename:Rename a saved server'
         'edit:Edit a saved server'
         'passwd:Change encryption password'
+        'scp:Copy files to/from a server'
         'completion:Output shell completion script'
         'help:Show help'
     )
@@ -507,12 +519,100 @@ _essh() {
             remove|edit|rename)
                 compadd -a names
                 ;;
+            scp)
+                local -a colon_names
+                for n in $names; do colon_names+=("$n:"); done
+                compadd -S '' -a colon_names
+                ;;
         esac
     fi
 }
 
 _essh "$@"
 `
+
+func cmdScp() error {
+	if len(os.Args) < 4 {
+		return fmt.Errorf("usage: essh scp <src> <dst>\n  Use <name>:/path for remote, e.g.:\n    essh scp prod-web:/etc/hostname ./hostname.txt\n    essh scp ./file.txt prod-web:/tmp/file.txt")
+	}
+	src := os.Args[2]
+	dst := os.Args[3]
+
+	// Determine direction: whichever arg contains "<name>:" is the remote side
+	srcName, srcPath := splitScpArg(src)
+	dstName, dstPath := splitScpArg(dst)
+
+	var serverName, remotePath, localPath string
+	var upload bool
+
+	switch {
+	case srcName != "" && dstName != "":
+		return fmt.Errorf("both arguments cannot be remote — copy between two remote servers is not supported")
+	case srcName != "":
+		serverName, remotePath, localPath = srcName, srcPath, dst
+		upload = false
+	case dstName != "":
+		serverName, remotePath, localPath = dstName, dstPath, src
+		upload = true
+	default:
+		return fmt.Errorf("one argument must be remote (e.g. prod-web:/path)")
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("not initialized — run 'essh init' first")
+	}
+
+	store, err := storage.Load(cfg.StoragePath)
+	if err != nil {
+		return err
+	}
+
+	srv := store.FindServer(serverName)
+	if srv == nil {
+		return fmt.Errorf("server %q not found — use 'essh list' to see saved servers", serverName)
+	}
+
+	encPassword, err := prompt.ReadPassword("Encryption password: ")
+	if err != nil {
+		return err
+	}
+
+	key, err := store.VerifyPassword(encPassword)
+	if err != nil {
+		return err
+	}
+
+	sshPassword, err := crypto.Decrypt(key, srv.EncryptedPassword)
+	if err != nil {
+		return fmt.Errorf("decrypting password: %w", err)
+	}
+
+	client, err := ssh.Dial(srv.Host, srv.Port, srv.User, sshPassword)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if upload {
+		return ssh.Upload(client, localPath, remotePath)
+	}
+	return ssh.Download(client, remotePath, localPath)
+}
+
+// splitScpArg splits "name:/path" into ("name", "/path").
+// Returns ("", arg) if there is no colon prefix matching a server name pattern.
+func splitScpArg(arg string) (name, path string) {
+	// A colon preceded by path separators or starting with . or / is a local path
+	if strings.HasPrefix(arg, "/") || strings.HasPrefix(arg, "./") || strings.HasPrefix(arg, "../") {
+		return "", arg
+	}
+	idx := strings.Index(arg, ":")
+	if idx < 1 {
+		return "", arg
+	}
+	return arg[:idx], arg[idx+1:]
+}
 
 func cmdConnect(name string) error {
 	cfg, err := config.Load()

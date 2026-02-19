@@ -77,7 +77,19 @@ Prompts for encryption password, then lets you change user, host, port, and SSH 
 
 Prompts for the current password, then a new password (with confirmation). Re-encrypts all saved SSH passwords with the new key.
 
-### 8. Connect
+### 8. Copy files (SCP)
+
+```bash
+# Download a file from remote server
+./essh scp prod-web:/etc/hostname ./hostname.txt
+
+# Upload a file to remote server
+./essh scp ./hostname.txt prod-web:/tmp/hostname.txt
+```
+
+Uses the same saved credentials. Direction is determined by which argument contains `<name>:`.
+
+### 9. Connect
 
 ```bash
 ./essh prod-web
