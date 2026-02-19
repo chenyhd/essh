@@ -36,6 +36,10 @@ func main() {
 		err = cmdEdit()
 	case "passwd":
 		err = cmdPasswd()
+	case "completion":
+		err = cmdCompletion()
+	case "--names":
+		err = cmdNames()
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -59,7 +63,11 @@ Usage:
   essh rename <old> <new>      Rename a saved server
   essh edit <name>             Edit a saved server
   essh passwd                  Change encryption password
-  essh <name>                  Connect to a saved server`)
+  essh completion              Output shell completion script (bash/zsh)
+  essh <name>                  Connect to a saved server
+
+Environment:
+  ESSH_PASSWORD                Skip encryption password prompt`)
 }
 
 func cmdInit() error {
@@ -222,6 +230,28 @@ func cmdRemove() error {
 	store, err := storage.Load(cfg.StoragePath)
 	if err != nil {
 		return err
+	}
+
+	if store.FindServer(name) == nil {
+		return fmt.Errorf("server %q not found", name)
+	}
+
+	encPassword, err := prompt.ReadPassword("Encryption password: ")
+	if err != nil {
+		return err
+	}
+
+	if _, err := store.VerifyPassword(encPassword); err != nil {
+		return err
+	}
+
+	ok, err := prompt.Confirm(fmt.Sprintf("Remove server %q? [y/N] ", name))
+	if err != nil {
+		return err
+	}
+	if !ok {
+		fmt.Println("Cancelled.")
+		return nil
 	}
 
 	if err := store.RemoveServer(name); err != nil {
@@ -398,6 +428,91 @@ func cmdPasswd() error {
 	fmt.Println("Encryption password changed successfully.")
 	return nil
 }
+
+func cmdNames() error {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil
+	}
+	store, err := storage.Load(cfg.StoragePath)
+	if err != nil {
+		return nil
+	}
+	for _, s := range store.Servers {
+		fmt.Println(s.Name)
+	}
+	return nil
+}
+
+func cmdCompletion() error {
+	shell := "zsh"
+	if len(os.Args) >= 3 {
+		shell = os.Args[2]
+	}
+	switch shell {
+	case "bash":
+		fmt.Print(bashCompletion)
+	case "zsh":
+		fmt.Print(zshCompletion)
+	default:
+		return fmt.Errorf("unsupported shell %q (use bash or zsh)", shell)
+	}
+	return nil
+}
+
+const bashCompletion = `_essh() {
+    local cur commands
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    commands="init add list remove rename edit passwd completion help"
+
+    if [ "$COMP_CWORD" -eq 1 ]; then
+        local names
+        names=$(essh --names 2>/dev/null)
+        COMPREPLY=($(compgen -W "$commands $names" -- "$cur"))
+    elif [ "$COMP_CWORD" -eq 2 ]; then
+        case "${COMP_WORDS[1]}" in
+            remove|edit|rename)
+                local names
+                names=$(essh --names 2>/dev/null)
+                COMPREPLY=($(compgen -W "$names" -- "$cur"))
+                ;;
+        esac
+    fi
+}
+complete -F _essh essh
+`
+
+const zshCompletion = `#compdef essh
+
+_essh() {
+    local -a commands names
+    commands=(
+        'init:Initialize storage with encryption password'
+        'add:Add a server'
+        'list:List saved servers'
+        'remove:Remove a saved server'
+        'rename:Rename a saved server'
+        'edit:Edit a saved server'
+        'passwd:Change encryption password'
+        'completion:Output shell completion script'
+        'help:Show help'
+    )
+    names=(${(f)"$(essh --names 2>/dev/null)"})
+
+    if (( CURRENT == 2 )); then
+        _describe 'command' commands
+        compadd -a names
+    elif (( CURRENT == 3 )); then
+        case "${words[2]}" in
+            remove|edit|rename)
+                compadd -a names
+                ;;
+        esac
+    fi
+}
+
+_essh "$@"
+`
 
 func cmdConnect(name string) error {
 	cfg, err := config.Load()

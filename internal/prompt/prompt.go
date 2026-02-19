@@ -23,7 +23,11 @@ func ReadLine(prompt string) (string, error) {
 }
 
 // ReadPassword reads a password without echoing it to the terminal.
+// If ESSH_PASSWORD is set, returns its value without prompting.
 func ReadPassword(prompt string) (string, error) {
+	if pw := os.Getenv("ESSH_PASSWORD"); pw != "" {
+		return pw, nil
+	}
 	fmt.Print(prompt)
 	pw, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Println()
@@ -31,6 +35,16 @@ func ReadPassword(prompt string) (string, error) {
 		return "", err
 	}
 	return string(pw), nil
+}
+
+// Confirm asks a yes/no question and returns true if the user answers "y" or "yes".
+func Confirm(msg string) (bool, error) {
+	answer, err := ReadLine(msg)
+	if err != nil {
+		return false, err
+	}
+	answer = strings.ToLower(answer)
+	return answer == "y" || answer == "yes", nil
 }
 
 // ReadPasswordConfirm reads a password twice and ensures they match.

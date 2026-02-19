@@ -85,6 +85,24 @@ Prompts for the current password, then a new password (with confirmation). Re-en
 
 Prompts for encryption password, decrypts the SSH password, and opens an interactive shell.
 
+## Tab Completion
+
+```bash
+# Zsh (add to ~/.zshrc)
+eval "$(essh completion zsh)"
+
+# Bash (add to ~/.bashrc)
+eval "$(essh completion bash)"
+```
+
+Enables tab completion for commands and server names.
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `ESSH_PASSWORD` | Skip encryption password prompt. Useful for scripting or frequent use |
+
 ## Portability
 
 The storage file (`essh-storage.json`) is self-contained. Copy it to another machine, run `./essh init` pointing to its directory, and use the same encryption password to connect.
