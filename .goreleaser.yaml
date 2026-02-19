@@ -25,6 +25,23 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+brews:
+  - repository:
+      owner: chenyhd
+      name: homebrew-tap
+    homepage: https://github.com/chenyhd/essh
+    description: Encrypted SSH client — store server credentials, connect by name
+    license: MIT
+
+nfpms:
+  - package_name: essh
+    homepage: https://github.com/chenyhd/essh
+    description: Encrypted SSH client — store server credentials, connect by name
+    license: MIT
+    formats:
+      - deb
+      - rpm
+
 changelog:
   sort: asc
   filters:
