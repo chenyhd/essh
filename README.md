@@ -141,6 +141,24 @@ Uses the same saved credentials. Direction is determined by which argument conta
 
 Prompts for encryption password, decrypts the SSH password, and opens an interactive shell.
 
+Prefix matching is supported — `essh p` will connect to `prod-web` if it's the only server starting with "p". If multiple servers match, they are listed for you to be more specific.
+
+### 11. Interactive selection
+
+```bash
+./essh
+```
+
+Running `essh` with no arguments opens an interactive server selector. Use arrow keys or `j`/`k` to move, `Enter` to select, `q` or `Ctrl+C` to cancel. The last connected server is pre-selected.
+
+### 12. Reconnect last server
+
+```bash
+./essh -
+```
+
+Quickly reconnect to the last server you connected to.
+
 ## Tab Completion
 
 ```bash
@@ -158,6 +176,12 @@ Enables tab completion for commands and server names.
 | Variable | Description |
 |----------|-------------|
 | `ESSH_PASSWORD` | Skip encryption password prompt. Useful for scripting or frequent use |
+
+## Session Password Cache
+
+After a successful `connect`, `add`, `edit`, or `scp`, the encryption password is cached for **30 minutes**. Subsequent commands within that window will not prompt for the password again.
+
+For security, `remove` and `passwd` always require you to enter the password regardless of cache.
 
 ## Keyfile (Two-Factor Protection)
 
