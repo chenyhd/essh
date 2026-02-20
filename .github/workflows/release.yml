@@ -30,15 +30,21 @@ jobs:
 
       - name: Upload unversioned assets
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${GITHUB_REF#refs/tags/}"
-          for f in dist/*.{deb,rpm,tar.gz,zip}; do
+          upload_url=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$tag" \
+            | grep '"upload_url"' | sed 's/.*"\(https.*\){.*/\1/')
+          for f in dist/*.deb dist/*.rpm dist/*.tar.gz dist/*.zip; do
             [ -f "$f" ] || continue
             base=$(basename "$f")
             unversioned=$(echo "$base" | sed "s/_${tag#v}_/_/")
             cp "$f" "dist/$unversioned"
-            gh release upload "$tag" "dist/$unversioned" --clobber
+            curl -s -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"dist/$unversioned" \
+              "${upload_url}?name=${unversioned}&label=${unversioned}"
           done
 
   release-github-hosted:
@@ -64,13 +70,19 @@ jobs:
 
       - name: Upload unversioned assets
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${GITHUB_REF#refs/tags/}"
-          for f in dist/*.{deb,rpm,tar.gz,zip}; do
+          upload_url=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$tag" \
+            | grep '"upload_url"' | sed 's/.*"\(https.*\){.*/\1/')
+          for f in dist/*.deb dist/*.rpm dist/*.tar.gz dist/*.zip; do
             [ -f "$f" ] || continue
             base=$(basename "$f")
             unversioned=$(echo "$base" | sed "s/_${tag#v}_/_/")
             cp "$f" "dist/$unversioned"
-            gh release upload "$tag" "dist/$unversioned" --clobber
+            curl -s -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"dist/$unversioned" \
+              "${upload_url}?name=${unversioned}&label=${unversioned}"
           done
