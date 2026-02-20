@@ -62,17 +62,20 @@ tar xzf essh_*.tar.gz
 sudo mv essh /usr/local/bin/
 ```
 
-### Windows
+### Windows (PowerShell)
 
 ```powershell
 # amd64
 curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_windows_amd64.zip
+Expand-Archive essh_windows_amd64.zip -DestinationPath "$env:LOCALAPPDATA\essh"
 
 # arm64
 curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_windows_arm64.zip
-```
+Expand-Archive essh_windows_arm64.zip -DestinationPath "$env:LOCALAPPDATA\essh"
 
-Unzip and add `essh.exe` to your PATH.
+# Create symlink in a directory already in PATH
+New-Item -ItemType SymbolicLink -Path "$env:LOCALAPPDATA\Microsoft\WindowsApps\essh.exe" -Target "$env:LOCALAPPDATA\essh\essh.exe"
+```
 
 ### From source
 
