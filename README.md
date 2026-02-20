@@ -13,22 +13,57 @@ brew install chenyhd/tap/essh
 ### Linux (deb)
 
 ```bash
-# Download the latest .deb from GitHub Releases
+# amd64
 curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_linux_amd64.deb
 sudo dpkg -i essh_linux_amd64.deb
+
+# arm64
+curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_linux_arm64.deb
+sudo dpkg -i essh_linux_arm64.deb
 ```
 
 ### Linux (rpm)
 
 ```bash
-# Download the latest .rpm from GitHub Releases
+# amd64
 curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_linux_amd64.rpm
 sudo rpm -i essh_linux_amd64.rpm
+
+# arm64
+curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_linux_arm64.rpm
+sudo rpm -i essh_linux_arm64.rpm
+```
+
+### Linux / macOS (tar.gz)
+
+```bash
+# Linux amd64
+curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_linux_amd64.tar.gz
+
+# Linux arm64
+curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_linux_arm64.tar.gz
+
+# macOS Apple Silicon
+curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_darwin_arm64.tar.gz
+
+# macOS Intel
+curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_darwin_amd64.tar.gz
+
+tar xzf essh_*.tar.gz
+sudo mv essh /usr/local/bin/
 ```
 
 ### Windows
 
-Download the `.zip` from [GitHub Releases](https://github.com/chenyhd/essh/releases) and add `essh.exe` to your PATH.
+```powershell
+# amd64
+curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_windows_amd64.zip
+
+# arm64
+curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_windows_arm64.zip
+```
+
+Unzip and add `essh.exe` to your PATH.
 
 ### From source
 
