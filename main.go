@@ -102,15 +102,8 @@ func cmdInit() error {
 			return err
 		}
 		dir = d
-	}
-
-	// Expand ~ if present
-	if strings.HasPrefix(dir, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		dir = filepath.Join(home, dir[2:])
+	} else {
+		dir = config.ExpandPath(dir)
 	}
 
 	encPassword, err := prompt.ReadPasswordConfirm("Encryption password: ", "Confirm password: ")
@@ -139,14 +132,8 @@ func cmdInit() error {
 	if keyfilePath != "none" {
 		if keyfilePath == "" {
 			keyfilePath = defaultKeyfilePath
-		}
-		// Expand ~ if present
-		if strings.HasPrefix(keyfilePath, "~/") {
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return err
-			}
-			keyfilePath = filepath.Join(home, keyfilePath[2:])
+		} else {
+			keyfilePath = config.ExpandPath(keyfilePath)
 		}
 		if err := crypto.GenerateKeyfile(keyfilePath); err != nil {
 			return err
@@ -155,7 +142,7 @@ func cmdInit() error {
 		if err != nil {
 			return err
 		}
-		keyfileConfigPath = keyfilePath
+		keyfileConfigPath = config.CollapsePath(keyfilePath)
 		fmt.Printf("Generated keyfile at %s\n", keyfilePath)
 	}
 
@@ -170,7 +157,7 @@ func cmdInit() error {
 	}
 
 	cfg := &config.Config{
-		StoragePath: storagePath,
+		StoragePath: config.CollapsePath(storagePath),
 		KeyfilePath: keyfileConfigPath,
 	}
 	if err := config.Save(cfg); err != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const configDir = ".essh"
@@ -34,7 +35,32 @@ func Path() (string, error) {
 	return filepath.Join(dir, configFile), nil
 }
 
+// ExpandPath expands a leading ~ to the user's home directory.
+func ExpandPath(p string) string {
+	if strings.HasPrefix(p, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return p
+		}
+		return filepath.Join(home, p[2:])
+	}
+	return p
+}
+
+// CollapsePath replaces the user's home directory prefix with ~.
+func CollapsePath(p string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return p
+	}
+	if strings.HasPrefix(p, home+"/") {
+		return "~" + p[len(home):]
+	}
+	return p
+}
+
 // Load reads the config from ~/.essh/config.json.
+// Paths containing ~ are expanded to absolute paths.
 func Load() (*Config, error) {
 	p, err := Path()
 	if err != nil {
@@ -48,6 +74,8 @@ func Load() (*Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
+	cfg.StoragePath = ExpandPath(cfg.StoragePath)
+	cfg.KeyfilePath = ExpandPath(cfg.KeyfilePath)
 	return &cfg, nil
 }
 
