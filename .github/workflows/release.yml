@@ -27,3 +27,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Upload unversioned assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          for f in dist/*.{deb,rpm,tar.gz,zip}; do
+            [ -f "$f" ] || continue
+            base=$(basename "$f")
+            # essh_0.5.0_linux_amd64.tar.gz -> essh_linux_amd64.tar.gz
+            unversioned=$(echo "$base" | sed "s/_${tag#v}_/_/")
+            cp "$f" "dist/$unversioned"
+            gh release upload "$tag" "dist/$unversioned" --clobber
+          done
