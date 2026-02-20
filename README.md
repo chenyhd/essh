@@ -10,6 +10,15 @@ Store SSH server credentials with encrypted passwords, connect by server name.
 brew install chenyhd/tap/essh
 ```
 
+### Linux (APT repository)
+
+```bash
+curl -fsSL https://chenyhd.github.io/apt-repo/gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/essh.gpg
+echo "deb [signed-by=/usr/share/keyrings/essh.gpg] https://chenyhd.github.io/apt-repo stable main" | sudo tee /etc/apt/sources.list.d/essh.list
+sudo apt update
+sudo apt install essh
+```
+
 ### Linux (deb)
 
 ```bash

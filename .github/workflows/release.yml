@@ -47,6 +47,17 @@ jobs:
               "${upload_url}?name=${unversioned}&label=${unversioned}"
           done
 
+      - name: Trigger APT repo update
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          curl -s -X POST \
+            -H "Authorization: token $HOMEBREW_TAP_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/chenyhd/apt-repo/dispatches" \
+            -d "{\"event_type\":\"update-apt-repo\",\"client_payload\":{\"tag\":\"$tag\"}}"
+
   release-github-hosted:
     needs: release-self-hosted
     if: failure()
@@ -86,3 +97,14 @@ jobs:
               --data-binary @"dist/$unversioned" \
               "${upload_url}?name=${unversioned}&label=${unversioned}"
           done
+
+      - name: Trigger APT repo update
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          curl -s -X POST \
+            -H "Authorization: token $HOMEBREW_TAP_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/chenyhd/apt-repo/dispatches" \
+            -d "{\"event_type\":\"update-apt-repo\",\"client_payload\":{\"tag\":\"$tag\"}}"
