@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  release-self-hosted:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +36,40 @@ jobs:
           for f in dist/*.{deb,rpm,tar.gz,zip}; do
             [ -f "$f" ] || continue
             base=$(basename "$f")
-            # essh_0.5.0_linux_amd64.tar.gz -> essh_linux_amd64.tar.gz
+            unversioned=$(echo "$base" | sed "s/_${tag#v}_/_/")
+            cp "$f" "dist/$unversioned"
+            gh release upload "$tag" "dist/$unversioned" --clobber
+          done
+
+  release-github-hosted:
+    needs: release-self-hosted
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Upload unversioned assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          for f in dist/*.{deb,rpm,tar.gz,zip}; do
+            [ -f "$f" ] || continue
+            base=$(basename "$f")
             unversioned=$(echo "$base" | sed "s/_${tag#v}_/_/")
             cp "$f" "dist/$unversioned"
             gh release upload "$tag" "dist/$unversioned" --clobber
