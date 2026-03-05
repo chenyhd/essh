@@ -13,6 +13,13 @@ func Dial(host string, port int, user, password string) (*ssh.Client, error) {
 		User: user,
 		Auth: []ssh.AuthMethod{
 			ssh.Password(password),
+			ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
+				answers := make([]string, len(questions))
+				for i := range questions {
+					answers[i] = password
+				}
+				return answers, nil
+			}),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         10 * time.Second,
