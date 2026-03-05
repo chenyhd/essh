@@ -12,7 +12,6 @@ func Dial(host string, port int, user, password string) (*ssh.Client, error) {
 	config := &ssh.ClientConfig{
 		User: user,
 		Auth: []ssh.AuthMethod{
-			ssh.Password(password),
 			ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
 				answers := make([]string, len(questions))
 				for i := range questions {
@@ -20,6 +19,7 @@ func Dial(host string, port int, user, password string) (*ssh.Client, error) {
 				}
 				return answers, nil
 			}),
+			ssh.Password(password),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         10 * time.Second,
