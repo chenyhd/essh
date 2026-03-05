@@ -15,6 +15,12 @@ import (
 	"essh/internal/storage"
 )
 
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildTime = "unknown"
+)
+
 func main() {
 	if len(os.Args) < 2 {
 		if err := cmdSelectConnect(); err != nil {
@@ -81,7 +87,7 @@ Usage:
   essh rename <old> <new>      Rename a saved server
   essh edit <name>             Edit a saved server
   essh passwd                  Change encryption password
-  essh version                 Show storage version
+  essh version                 Show version info
   essh scp <src> <dst>         Copy files (use <name>:/path for remote)
   essh completion              Output shell completion script (bash/zsh)
 
@@ -664,17 +670,7 @@ func cmdPasswd() error {
 }
 
 func cmdVersion() error {
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("not initialized — run 'essh init' first")
-	}
-
-	store, err := storage.Load(cfg.StoragePath)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Storage: %s\nVersion: %d\n", cfg.StoragePath, store.Version)
+	fmt.Printf("essh %s\ncommit: %s\nbuilt:  %s\n", version, commit, buildTime)
 	return nil
 }
 
@@ -751,7 +747,7 @@ _essh() {
         'rename:Rename a saved server'
         'edit:Edit a saved server'
         'passwd:Change encryption password'
-        'version:Show storage version'
+        'version:Show version info'
         'scp:Copy files to/from a server'
         'completion:Output shell completion script'
         'help:Show help'
