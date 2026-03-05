@@ -108,3 +108,15 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/chenyhd/apt-repo/dispatches" \
             -d "{\"event_type\":\"update-apt-repo\",\"client_payload\":{\"tag\":\"$tag\"}}"
+
+  cleanup-old-releases:
+    needs: [release-self-hosted, release-github-hosted]
+    if: always() && (needs.release-self-hosted.result == 'success' || needs.release-github-hosted.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dev-drprasad/delete-older-releases@v0.3.4
+        with:
+          keep_latest: 10
+          delete_tags: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
