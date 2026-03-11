@@ -380,7 +380,7 @@ func cmdAdd() error {
 		return err
 	}
 
-	sshPassword, err := prompt.ReadPassword("SSH password for " + user + "@" + host + ": ")
+	sshPassword, err := prompt.ReadSecret("SSH password for " + user + "@" + host + ": ")
 	if err != nil {
 		return err
 	}
@@ -591,7 +591,7 @@ func cmdEdit() error {
 		srv.Port = p
 	}
 
-	newSSHPw, err := prompt.ReadPassword("New SSH password (leave empty to keep): ")
+	newSSHPw, err := prompt.ReadSecret("New SSH password (leave empty to keep): ")
 	if err != nil {
 		return err
 	}

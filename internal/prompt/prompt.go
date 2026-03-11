@@ -28,6 +28,12 @@ func ReadPassword(prompt string) (string, error) {
 	if pw := os.Getenv("ESSH_PASSWORD"); pw != "" {
 		return pw, nil
 	}
+	return ReadSecret(prompt)
+}
+
+// ReadSecret reads sensitive input without echoing it to the terminal.
+// Unlike ReadPassword, it never reads from ESSH_PASSWORD.
+func ReadSecret(prompt string) (string, error) {
 	fmt.Print(prompt)
 	pw, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Println()
