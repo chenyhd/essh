@@ -88,7 +88,7 @@ Usage:
   essh edit <name>             Edit a saved server
   essh passwd                  Change encryption password
   essh version                 Show version info
-  essh scp <src> <dst>         Copy files (use <name>:/path for remote)
+  essh scp [-r] <src> <dst>    Copy files or directories (use <name>:/path for remote; -r for recursive)
   essh completion              Output shell completion script (bash/zsh)
 
 Environment:
@@ -775,11 +775,22 @@ _essh "$@"
 `
 
 func cmdScp() error {
-	if len(os.Args) < 4 {
-		return fmt.Errorf("usage: essh scp <src> <dst>\n  Use <name>:/path for remote, e.g.:\n    essh scp prod-web:/etc/hostname ./hostname.txt\n    essh scp ./file.txt prod-web:/tmp/file.txt")
+	recursive := false
+	positional := make([]string, 0, 2)
+	for _, a := range os.Args[2:] {
+		switch a {
+		case "-r", "-R":
+			recursive = true
+		default:
+			positional = append(positional, a)
+		}
 	}
-	src := os.Args[2]
-	dst := os.Args[3]
+
+	if len(positional) < 2 {
+		return fmt.Errorf("usage: essh scp [-r] <src> <dst>\n  Use <name>:/path for remote, e.g.:\n    essh scp prod-web:/etc/hostname ./hostname.txt\n    essh scp ./file.txt prod-web:/tmp/file.txt\n    essh scp -r ./mydir prod-web:/tmp/\n    essh scp -r prod-web:/var/log ./logs")
+	}
+	src := positional[0]
+	dst := positional[1]
 
 	// Determine direction: whichever arg contains "<name>:" is the remote side
 	srcName, srcPath := splitScpArg(src)
@@ -838,7 +849,13 @@ func cmdScp() error {
 	defer client.Close()
 
 	if upload {
+		if recursive {
+			return ssh.UploadRecursive(client, localPath, remotePath)
+		}
 		return ssh.Upload(client, localPath, remotePath)
+	}
+	if recursive {
+		return ssh.DownloadRecursive(client, remotePath, localPath)
 	}
 	return ssh.Download(client, remotePath, localPath)
 }

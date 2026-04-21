@@ -171,14 +171,46 @@ Shows the storage file path and version number. The version increments on every 
 ### 9. Copy files (SCP)
 
 ```bash
-# Download a file from remote server
+essh scp [-r] <src> <dst>
+```
+
+Uses the same saved credentials. Direction is determined by which argument contains `<name>:` — the other argument is the local path. Exactly one side must be remote (remote-to-remote copies are not supported).
+
+#### Single file
+
+```bash
+# Download
 essh scp prod-web:/etc/hostname ./hostname.txt
 
-# Upload a file to remote server
+# Upload
 essh scp ./hostname.txt prod-web:/tmp/hostname.txt
 ```
 
-Uses the same saved credentials. Direction is determined by which argument contains `<name>:`.
+If the local destination is an existing directory, the remote file is placed inside it with its original name.
+
+#### Recursive (directories)
+
+Pass `-r` to copy directory trees:
+
+```bash
+# Upload a directory
+essh scp -r ./mydir prod-web:/tmp/
+
+# Download a directory
+essh scp -r prod-web:/var/log ./logs
+```
+
+Path resolution follows standard `scp` semantics:
+
+- **Upload** — `essh scp -r ./mydir host:/tmp/` creates `/tmp/mydir/` on the remote.
+- **Download, local target exists as dir** — `essh scp -r host:/var/log ./logs` (where `./logs` exists) creates `./logs/log/`.
+- **Download, local target does not exist** — `essh scp -r host:/var/log ./logs` (where `./logs` does not exist) creates `./logs/` as a copy of `/var/log`.
+
+#### Notes
+
+- File permissions are preserved from the source side.
+- Symlinks, devices, and other non-regular files are skipped with a notice; only regular files and directories are copied.
+- Paths containing spaces should be quoted in your shell as usual (e.g. `essh scp "./my file.txt" host:/tmp/`).
 
 ### 10. Connect
 
