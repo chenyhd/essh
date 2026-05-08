@@ -24,7 +24,7 @@ func Connect(host string, port int, user, password string) error {
 	fd := int(os.Stdin.Fd())
 
 	for {
-		err := runSession(host, port, user, password, fd)
+		_, err := runSession(host, port, user, password, fd)
 		if err == nil || isCleanExit(err) {
 			return nil
 		}
@@ -51,7 +51,7 @@ func reconnectLoop(host string, port int, user, password string, fd int) error {
 		}
 
 		fmt.Fprintf(os.Stderr, "Reconnecting to %s@%s:%d...\r\n", user, host, port)
-		err = runSession(host, port, user, password, fd)
+		_, err = runSession(host, port, user, password, fd)
 		if err == nil || isCleanExit(err) {
 			return nil
 		}
@@ -71,13 +71,13 @@ func autoReconnect(host string, port int, user, password string, fd int) error {
 
 		fmt.Fprintf(os.Stderr, "Reconnecting to %s@%s:%d...\r\n", user, host, port)
 		start := time.Now()
-		err := runSession(host, port, user, password, fd)
+		connected, err := runSession(host, port, user, password, fd)
 		if err == nil || isCleanExit(err) {
 			return nil
 		}
 		fmt.Fprintf(os.Stderr, "Connection lost: %v\r\n", err)
 
-		if time.Since(start) >= sessionStableThreshold {
+		if connected && time.Since(start) >= sessionStableThreshold {
 			backoff = time.Second
 			deadline = time.Now().Add(maxAutoRetryDuration)
 			continue
@@ -96,22 +96,26 @@ func waitForEnter(host string, port int, user string) error {
 	return err
 }
 
-func runSession(host string, port int, user, password string, fd int) error {
+// runSession dials and runs an interactive shell. The first return value
+// reports whether Dial succeeded — callers use this to distinguish a failed
+// connection (TCP timeout, host down) from a session that connected and then
+// dropped, since the two have very different retry semantics.
+func runSession(host string, port int, user, password string, fd int) (bool, error) {
 	client, err := Dial(host, port, user, password)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer client.Close()
 
 	session, err := client.NewSession()
 	if err != nil {
-		return fmt.Errorf("creating session: %w", err)
+		return true, fmt.Errorf("creating session: %w", err)
 	}
 	defer session.Close()
 
 	oldState, err := term.MakeRaw(fd)
 	if err != nil {
-		return fmt.Errorf("setting raw mode: %w", err)
+		return true, fmt.Errorf("setting raw mode: %w", err)
 	}
 	defer term.Restore(fd, oldState)
 
@@ -126,14 +130,14 @@ func runSession(host string, port int, user, password string, fd int) error {
 		ssh.TTY_OP_OSPEED: 14400,
 	}
 	if err := session.RequestPty("xterm-256color", height, width, modes); err != nil {
-		return fmt.Errorf("requesting PTY: %w", err)
+		return true, fmt.Errorf("requesting PTY: %w", err)
 	}
 
 	session.Stdout = os.Stdout
 	session.Stderr = os.Stderr
 	stdin, err := session.StdinPipe()
 	if err != nil {
-		return fmt.Errorf("getting stdin pipe: %w", err)
+		return true, fmt.Errorf("getting stdin pipe: %w", err)
 	}
 
 	sigCh := make(chan os.Signal, 1)
@@ -153,9 +157,9 @@ func runSession(host string, port int, user, password string, fd int) error {
 	}()
 
 	if err := session.Shell(); err != nil {
-		return fmt.Errorf("starting shell: %w", err)
+		return true, fmt.Errorf("starting shell: %w", err)
 	}
-	return session.Wait()
+	return true, session.Wait()
 }
 
 func isCleanExit(err error) bool {
