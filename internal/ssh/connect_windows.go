@@ -3,6 +3,7 @@
 package ssh
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -16,33 +17,83 @@ import (
 )
 
 // Connect establishes an SSH connection and starts an interactive shell session.
-// If the connection drops unexpectedly, it automatically reconnects with backoff.
+// If the connection drops, it auto-reconnects with backoff for up to
+// maxAutoRetryDuration; after that it pauses and waits for the user to press
+// Enter to retry.
 func Connect(host string, port int, user, password string) error {
 	fd := int(os.Stdin.Fd())
-	backoff := time.Second
 
 	for {
 		err := runSession(host, port, user, password, fd)
 		if err == nil || isCleanExit(err) {
 			return nil
 		}
-
 		fmt.Fprintf(os.Stderr, "\r\nConnection lost: %v\r\n", err)
 
-		for {
-			fmt.Fprintf(os.Stderr, "Reconnecting in %s...\r\n", backoff)
-			time.Sleep(backoff)
-
-			fmt.Fprintf(os.Stderr, "Reconnecting to %s@%s:%d...\r\n", user, host, port)
-			err = runSession(host, port, user, password, fd)
-			if err == nil || isCleanExit(err) {
-				return nil
-			}
-
-			fmt.Fprintf(os.Stderr, "Reconnect failed: %v\r\n", err)
-			backoff = nextBackoff(backoff)
+		if err := reconnectLoop(host, port, user, password, fd); err != nil {
+			return err
 		}
 	}
+}
+
+func reconnectLoop(host string, port int, user, password string, fd int) error {
+	for {
+		err := autoReconnect(host, port, user, password, fd)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, errAutoRetryExhausted) {
+			return err
+		}
+
+		if err := waitForEnter(host, port, user); err != nil {
+			return err
+		}
+
+		fmt.Fprintf(os.Stderr, "Reconnecting to %s@%s:%d...\r\n", user, host, port)
+		err = runSession(host, port, user, password, fd)
+		if err == nil || isCleanExit(err) {
+			return nil
+		}
+		fmt.Fprintf(os.Stderr, "Connection lost: %v\r\n", err)
+	}
+}
+
+var errAutoRetryExhausted = errors.New("auto-retry exhausted")
+
+func autoReconnect(host string, port int, user, password string, fd int) error {
+	backoff := time.Second
+	deadline := time.Now().Add(maxAutoRetryDuration)
+
+	for time.Now().Before(deadline) {
+		fmt.Fprintf(os.Stderr, "Reconnecting in %s...\r\n", backoff)
+		time.Sleep(backoff)
+
+		fmt.Fprintf(os.Stderr, "Reconnecting to %s@%s:%d...\r\n", user, host, port)
+		start := time.Now()
+		err := runSession(host, port, user, password, fd)
+		if err == nil || isCleanExit(err) {
+			return nil
+		}
+		fmt.Fprintf(os.Stderr, "Connection lost: %v\r\n", err)
+
+		if time.Since(start) >= sessionStableThreshold {
+			backoff = time.Second
+			deadline = time.Now().Add(maxAutoRetryDuration)
+			continue
+		}
+		backoff = nextBackoff(backoff)
+	}
+	return errAutoRetryExhausted
+}
+
+func waitForEnter(host string, port int, user string) error {
+	fmt.Fprintf(os.Stderr,
+		"\r\nAuto-reconnect paused after %s. Press Enter to retry %s@%s:%d, or Ctrl+C to quit.\r\n",
+		maxAutoRetryDuration, user, host, port)
+	reader := bufio.NewReader(os.Stdin)
+	_, err := reader.ReadString('\n')
+	return err
 }
 
 func runSession(host string, port int, user, password string, fd int) error {
@@ -111,6 +162,11 @@ func isCleanExit(err error) bool {
 	var exitErr *ssh.ExitError
 	return errors.As(err, &exitErr)
 }
+
+const (
+	maxAutoRetryDuration   = 1 * time.Minute
+	sessionStableThreshold = 10 * time.Second
+)
 
 func nextBackoff(current time.Duration) time.Duration {
 	const maxBackoff = 30 * time.Second
