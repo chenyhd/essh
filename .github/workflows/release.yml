@@ -16,11 +16,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - name: Skip if not the latest tag
+        id: check
+        run: |
+          git fetch --tags --force
+          latest=$(git tag --sort=-v:refname | head -n1)
+          current="${GITHUB_REF#refs/tags/}"
+          if [ "$current" != "$latest" ]; then
+            echo "Skipping: $current is not the latest tag ($latest)"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.check.outputs.skip != 'true'
+        uses: actions/setup-go@v5
         with:
           go-version: "1.21"
 
-      - uses: goreleaser/goreleaser-action@v6
+      - if: steps.check.outputs.skip != 'true'
+        uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
           args: release --clean
@@ -29,6 +44,7 @@ jobs:
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Upload unversioned assets
+        if: steps.check.outputs.skip != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -48,6 +64,7 @@ jobs:
           done
 
       - name: Trigger APT repo update
+        if: steps.check.outputs.skip != 'true'
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
@@ -67,11 +84,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - name: Skip if not the latest tag
+        id: check
+        run: |
+          git fetch --tags --force
+          latest=$(git tag --sort=-v:refname | head -n1)
+          current="${GITHUB_REF#refs/tags/}"
+          if [ "$current" != "$latest" ]; then
+            echo "Skipping: $current is not the latest tag ($latest)"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.check.outputs.skip != 'true'
+        uses: actions/setup-go@v5
         with:
           go-version: "1.21"
 
-      - uses: goreleaser/goreleaser-action@v6
+      - if: steps.check.outputs.skip != 'true'
+        uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
           args: release --clean
@@ -80,6 +112,7 @@ jobs:
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Upload unversioned assets
+        if: steps.check.outputs.skip != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -99,6 +132,7 @@ jobs:
           done
 
       - name: Trigger APT repo update
+        if: steps.check.outputs.skip != 'true'
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
@@ -117,6 +151,6 @@ jobs:
       - uses: dev-drprasad/delete-older-releases@v0.3.4
         with:
           keep_latest: 10
-          delete_tags: true
+          delete_tags: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
