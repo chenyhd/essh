@@ -151,6 +151,30 @@ func runSession(host string, port int, user, password string, fd int) (bool, err
 		}
 	}()
 
+	// Windows has no SIGWINCH; poll the console size and notify the remote on change.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(resizePollInterval)
+		defer ticker.Stop()
+		prevW, prevH := width, height
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				w, h, err := term.GetSize(fd)
+				if err != nil {
+					continue
+				}
+				if w != prevW || h != prevH {
+					session.WindowChange(h, w)
+					prevW, prevH = w, h
+				}
+			}
+		}
+	}()
+
 	go func() {
 		io.Copy(stdin, os.Stdin)
 		stdin.Close()
@@ -170,6 +194,7 @@ func isCleanExit(err error) bool {
 const (
 	maxAutoRetryDuration   = 1 * time.Minute
 	sessionStableThreshold = 10 * time.Second
+	resizePollInterval     = 500 * time.Millisecond
 )
 
 func nextBackoff(current time.Duration) time.Duration {
