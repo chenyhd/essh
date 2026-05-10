@@ -65,16 +65,20 @@ sudo mv essh /usr/local/bin/
 ### Windows (PowerShell)
 
 ```powershell
-# amd64
-curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_windows_amd64.zip
-Expand-Archive essh_windows_amd64.zip -DestinationPath "$env:LOCALAPPDATA\essh"
+# Pick one (amd64 or arm64). Use curl.exe explicitly — PowerShell's `curl`
+# alias is Invoke-WebRequest and does not accept -LO.
+curl.exe -LO https://github.com/chenyhd/essh/releases/latest/download/essh_windows_amd64.zip
+# or
+curl.exe -LO https://github.com/chenyhd/essh/releases/latest/download/essh_windows_arm64.zip
 
-# arm64
-curl -LO https://github.com/chenyhd/essh/releases/latest/download/essh_windows_arm64.zip
-Expand-Archive essh_windows_arm64.zip -DestinationPath "$env:LOCALAPPDATA\essh"
+Expand-Archive .\essh_windows_*.zip -DestinationPath "$env:LOCALAPPDATA\essh" -Force
 
-# Create symlink in a directory already in PATH
-New-Item -ItemType SymbolicLink -Path "$env:LOCALAPPDATA\Microsoft\WindowsApps\essh.exe" -Target "$env:LOCALAPPDATA\essh\essh.exe"
+# Register on PATH via a symlink in %LOCALAPPDATA%\Microsoft\WindowsApps,
+# which is already in PATH. Requires Developer Mode (Settings → Privacy &
+# security → For developers) or an elevated PowerShell.
+New-Item -ItemType SymbolicLink -Force `
+  -Path "$env:LOCALAPPDATA\Microsoft\WindowsApps\essh.exe" `
+  -Target "$env:LOCALAPPDATA\essh\essh.exe"
 ```
 
 ### From source
