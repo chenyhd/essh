@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/sys/windows"
 	"golang.org/x/term"
 )
 
@@ -119,9 +120,19 @@ func runSession(host string, port int, user, password string, fd int) (bool, err
 	}
 	defer term.Restore(fd, oldState)
 
-	width, height, err := term.GetSize(fd)
+	// On Windows, term.GetSize calls GetConsoleScreenBufferInfo, which only
+	// accepts a screen-buffer (stdout) handle — passing stdin's fd would fail.
+	sizeFd := int(os.Stdout.Fd())
+	width, height, err := term.GetSize(sizeFd)
 	if err != nil {
 		width, height = 80, 24
+	}
+
+	// Enable VT processing on the output handle so ANSI escapes from full-screen
+	// programs (top, vim, htop) render correctly instead of as literal text.
+	restoreVT, vtErr := enableVTOutput(windows.Handle(os.Stdout.Fd()))
+	if vtErr == nil {
+		defer restoreVT()
 	}
 
 	modes := ssh.TerminalModes{
@@ -163,7 +174,7 @@ func runSession(host string, port int, user, password string, fd int) (bool, err
 			case <-done:
 				return
 			case <-ticker.C:
-				w, h, err := term.GetSize(fd)
+				w, h, err := term.GetSize(sizeFd)
 				if err != nil {
 					continue
 				}
@@ -199,6 +210,18 @@ const (
 	sessionStableThreshold = 10 * time.Second
 	resizePollInterval     = 500 * time.Millisecond
 )
+
+func enableVTOutput(h windows.Handle) (func(), error) {
+	var mode uint32
+	if err := windows.GetConsoleMode(h, &mode); err != nil {
+		return nil, err
+	}
+	newMode := mode | windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING | windows.DISABLE_NEWLINE_AUTO_RETURN
+	if err := windows.SetConsoleMode(h, newMode); err != nil {
+		return nil, err
+	}
+	return func() { windows.SetConsoleMode(h, mode) }, nil
+}
 
 func nextBackoff(current time.Duration) time.Duration {
 	const maxBackoff = 30 * time.Second
