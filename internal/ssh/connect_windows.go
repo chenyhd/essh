@@ -66,8 +66,8 @@ func autoReconnect(host string, port int, user, password string, fd int) error {
 	deadline := time.Now().Add(maxAutoRetryDuration)
 
 	for time.Now().Before(deadline) {
-		fmt.Fprintf(os.Stderr, "Reconnecting in %s...\r\n", backoff)
-		time.Sleep(backoff)
+		fmt.Fprintf(os.Stderr, "Reconnecting in %s (Enter to retry now)...\r\n", backoff)
+		sleepOrEnter(backoff)
 
 		fmt.Fprintf(os.Stderr, "Reconnecting to %s@%s:%d...\r\n", user, host, port)
 		start := time.Now()
@@ -175,10 +175,13 @@ func runSession(host string, port int, user, password string, fd int) (bool, err
 		}
 	}()
 
+	stdinDone := make(chan struct{})
 	go func() {
 		io.Copy(stdin, os.Stdin)
 		stdin.Close()
+		close(stdinDone)
 	}()
+	defer interruptStdinReader(stdinDone)
 
 	if err := session.Shell(); err != nil {
 		return true, fmt.Errorf("starting shell: %w", err)
