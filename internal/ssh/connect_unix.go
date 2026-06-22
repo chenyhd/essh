@@ -3,10 +3,8 @@
 package ssh
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -22,15 +20,16 @@ import (
 // Enter to retry.
 func Connect(host string, port int, user, password string) error {
 	fd := int(os.Stdin.Fd())
+	broker := newStdinBroker()
 
 	for {
-		_, err := runSession(host, port, user, password, fd)
+		_, err := runSession(broker, host, port, user, password, fd)
 		if err == nil || isCleanExit(err) {
 			return nil
 		}
 		fmt.Fprintf(os.Stderr, "\r\nConnection lost: %v\r\n", err)
 
-		if err := reconnectLoop(host, port, user, password, fd); err != nil {
+		if err := reconnectLoop(broker, host, port, user, password, fd); err != nil {
 			return err
 		}
 	}
@@ -39,9 +38,9 @@ func Connect(host string, port int, user, password string) error {
 // reconnectLoop alternates between auto-retry (exponential backoff, capped at
 // maxAutoRetryDuration) and a manual prompt waiting for Enter. Returns nil
 // when a session ends cleanly, or an error if the user quits / stdin closes.
-func reconnectLoop(host string, port int, user, password string, fd int) error {
+func reconnectLoop(broker *stdinBroker, host string, port int, user, password string, fd int) error {
 	for {
-		err := autoReconnect(host, port, user, password, fd)
+		err := autoReconnect(broker, host, port, user, password, fd)
 		if err == nil {
 			return nil
 		}
@@ -49,12 +48,12 @@ func reconnectLoop(host string, port int, user, password string, fd int) error {
 			return err
 		}
 
-		if err := waitForEnter(host, port, user); err != nil {
+		if err := waitForEnter(broker, host, port, user); err != nil {
 			return err
 		}
 
 		fmt.Fprintf(os.Stderr, "Reconnecting to %s@%s:%d...\r\n", user, host, port)
-		_, err = runSession(host, port, user, password, fd)
+		_, err = runSession(broker, host, port, user, password, fd)
 		if err == nil || isCleanExit(err) {
 			return nil
 		}
@@ -68,7 +67,7 @@ var errAutoRetryExhausted = errors.New("auto-retry exhausted")
 // or until maxAutoRetryDuration elapses. The retry budget is only reset when
 // a session actually connected and ran for sessionStableThreshold; failed
 // dials (TCP timeouts, host down, etc.) do not reset it.
-func autoReconnect(host string, port int, user, password string, fd int) error {
+func autoReconnect(broker *stdinBroker, host string, port int, user, password string, fd int) error {
 	backoff := time.Second
 	deadline := time.Now().Add(maxAutoRetryDuration)
 
@@ -78,7 +77,7 @@ func autoReconnect(host string, port int, user, password string, fd int) error {
 
 		fmt.Fprintf(os.Stderr, "Reconnecting to %s@%s:%d...\r\n", user, host, port)
 		start := time.Now()
-		connected, err := runSession(host, port, user, password, fd)
+		connected, err := runSession(broker, host, port, user, password, fd)
 		if err == nil || isCleanExit(err) {
 			return nil
 		}
@@ -96,20 +95,18 @@ func autoReconnect(host string, port int, user, password string, fd int) error {
 
 // waitForEnter prints a pause message and blocks until the user presses Enter.
 // Returns an error if stdin closes (treat as user quitting).
-func waitForEnter(host string, port int, user string) error {
+func waitForEnter(broker *stdinBroker, host string, port int, user string) error {
 	fmt.Fprintf(os.Stderr,
 		"\r\nAuto-reconnect paused after %s. Press Enter to retry %s@%s:%d, or Ctrl+C to quit.\r\n",
 		maxAutoRetryDuration, user, host, port)
-	reader := bufio.NewReader(os.Stdin)
-	_, err := reader.ReadString('\n')
-	return err
+	return broker.waitForLine()
 }
 
 // runSession dials and runs an interactive shell. The first return value
 // reports whether Dial succeeded — callers use this to distinguish a failed
 // connection (TCP timeout, host down) from a session that connected and then
 // dropped, since the two have very different retry semantics.
-func runSession(host string, port int, user, password string, fd int) (bool, error) {
+func runSession(broker *stdinBroker, host string, port int, user, password string, fd int) (bool, error) {
 	client, err := Dial(host, port, user, password)
 	if err != nil {
 		return false, err
@@ -171,10 +168,9 @@ func runSession(host string, port int, user, password string, fd int) (bool, err
 		}
 	}()
 
-	go func() {
-		io.Copy(stdin, os.Stdin)
-		stdin.Close()
-	}()
+	sessionDone := make(chan struct{})
+	defer close(sessionDone)
+	go broker.forward(stdin, sessionDone)
 
 	if err := session.Shell(); err != nil {
 		return true, fmt.Errorf("starting shell: %w", err)
