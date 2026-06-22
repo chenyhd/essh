@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/sys/windows"
 	"golang.org/x/term"
 )
 
@@ -65,8 +66,8 @@ func autoReconnect(broker *stdinBroker, host string, port int, user, password st
 	deadline := time.Now().Add(maxAutoRetryDuration)
 
 	for time.Now().Before(deadline) {
-		fmt.Fprintf(os.Stderr, "Reconnecting in %s...\r\n", backoff)
-		time.Sleep(backoff)
+		fmt.Fprintf(os.Stderr, "Reconnecting in %s (Enter to retry now)...\r\n", backoff)
+		broker.sleepOrEnter(backoff)
 
 		fmt.Fprintf(os.Stderr, "Reconnecting to %s@%s:%d...\r\n", user, host, port)
 		start := time.Now()
@@ -119,9 +120,19 @@ func runSession(broker *stdinBroker, host string, port int, user, password strin
 	}
 	defer term.Restore(fd, oldState)
 
-	width, height, err := term.GetSize(fd)
+	// On Windows, term.GetSize calls GetConsoleScreenBufferInfo, which only
+	// accepts a screen-buffer (stdout) handle — passing stdin's fd would fail.
+	sizeFd := int(os.Stdout.Fd())
+	width, height, err := term.GetSize(sizeFd)
 	if err != nil {
 		width, height = 80, 24
+	}
+
+	// Enable VT processing on the output handle so ANSI escapes from full-screen
+	// programs (top, vim, htop) render correctly instead of as literal text.
+	restoreVT, vtErr := enableVTOutput(windows.Handle(os.Stdout.Fd()))
+	if vtErr == nil {
+		defer restoreVT()
 	}
 
 	modes := ssh.TerminalModes{
@@ -151,6 +162,30 @@ func runSession(broker *stdinBroker, host string, port int, user, password strin
 		}
 	}()
 
+	// Windows has no SIGWINCH; poll the console size and notify the remote on change.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(resizePollInterval)
+		defer ticker.Stop()
+		prevW, prevH := width, height
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				w, h, err := term.GetSize(sizeFd)
+				if err != nil {
+					continue
+				}
+				if w != prevW || h != prevH {
+					session.WindowChange(h, w)
+					prevW, prevH = w, h
+				}
+			}
+		}
+	}()
+
 	sessionDone := make(chan struct{})
 	defer close(sessionDone)
 	go broker.forward(stdin, sessionDone)
@@ -169,7 +204,20 @@ func isCleanExit(err error) bool {
 const (
 	maxAutoRetryDuration   = 1 * time.Minute
 	sessionStableThreshold = 10 * time.Second
+	resizePollInterval     = 500 * time.Millisecond
 )
+
+func enableVTOutput(h windows.Handle) (func(), error) {
+	var mode uint32
+	if err := windows.GetConsoleMode(h, &mode); err != nil {
+		return nil, err
+	}
+	newMode := mode | windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING | windows.DISABLE_NEWLINE_AUTO_RETURN
+	if err := windows.SetConsoleMode(h, newMode); err != nil {
+		return nil, err
+	}
+	return func() { windows.SetConsoleMode(h, mode) }, nil
+}
 
 func nextBackoff(current time.Duration) time.Duration {
 	const maxBackoff = 30 * time.Second

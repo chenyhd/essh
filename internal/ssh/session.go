@@ -154,3 +154,29 @@ func (b *stdinBroker) waitForLine() error {
 		}
 	}
 }
+
+// sleepOrEnter waits up to d, returning true if the user pressed Enter (a chunk
+// containing CR or LF) to skip the remaining wait. Any other input received
+// during the wait is discarded. Because the broker is the sole reader of
+// os.Stdin, this needs no read deadlines and never races a session's input pump.
+func (b *stdinBroker) sleepOrEnter(d time.Duration) bool {
+	if d <= 0 {
+		return false
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	for {
+		select {
+		case <-timer.C:
+			return false
+		case chunk, ok := <-b.ch:
+			if !ok {
+				<-timer.C
+				return false
+			}
+			if bytes.ContainsAny(chunk, "\r\n") {
+				return true
+			}
+		}
+	}
+}

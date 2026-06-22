@@ -8,144 +8,52 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release-self-hosted:
     runs-on: self-hosted
+    timeout-minutes: 30
+    outputs:
+      skip: ${{ steps.release.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Skip if not the latest tag
-        id: check
-        run: |
-          git fetch --tags --force
-          latest=$(git tag --sort=-v:refname | head -n1)
-          current="${GITHUB_REF#refs/tags/}"
-          if [ "$current" != "$latest" ]; then
-            echo "Skipping: $current is not the latest tag ($latest)"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - if: steps.check.outputs.skip != 'true'
-        uses: actions/setup-go@v5
+      - id: release
+        uses: ./.github/actions/release
         with:
-          go-version: "1.21"
-
-      - if: steps.check.outputs.skip != 'true'
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: latest
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-
-      - name: Upload unversioned assets
-        if: steps.check.outputs.skip != 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          upload_url=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$tag" \
-            | grep '"upload_url"' | sed 's/.*"\(https.*\){.*/\1/')
-          for f in dist/*.deb dist/*.rpm dist/*.tar.gz dist/*.zip; do
-            [ -f "$f" ] || continue
-            base=$(basename "$f")
-            unversioned=$(echo "$base" | sed "s/_${tag#v}_/_/")
-            cp "$f" "dist/$unversioned"
-            curl -s -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary @"dist/$unversioned" \
-              "${upload_url}?name=${unversioned}&label=${unversioned}"
-          done
-
-      - name: Trigger APT repo update
-        if: steps.check.outputs.skip != 'true'
-        env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          curl -s -X POST \
-            -H "Authorization: token $HOMEBREW_TAP_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/chenyhd/apt-repo/dispatches" \
-            -d "{\"event_type\":\"update-apt-repo\",\"client_payload\":{\"tag\":\"$tag\"}}"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          homebrew_tap_token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: ${{ github.repository }}
 
   release-github-hosted:
     needs: release-self-hosted
     if: failure()
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      skip: ${{ steps.release.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Skip if not the latest tag
-        id: check
-        run: |
-          git fetch --tags --force
-          latest=$(git tag --sort=-v:refname | head -n1)
-          current="${GITHUB_REF#refs/tags/}"
-          if [ "$current" != "$latest" ]; then
-            echo "Skipping: $current is not the latest tag ($latest)"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - if: steps.check.outputs.skip != 'true'
-        uses: actions/setup-go@v5
+      - id: release
+        uses: ./.github/actions/release
         with:
-          go-version: "1.21"
-
-      - if: steps.check.outputs.skip != 'true'
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: latest
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-
-      - name: Upload unversioned assets
-        if: steps.check.outputs.skip != 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          upload_url=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$tag" \
-            | grep '"upload_url"' | sed 's/.*"\(https.*\){.*/\1/')
-          for f in dist/*.deb dist/*.rpm dist/*.tar.gz dist/*.zip; do
-            [ -f "$f" ] || continue
-            base=$(basename "$f")
-            unversioned=$(echo "$base" | sed "s/_${tag#v}_/_/")
-            cp "$f" "dist/$unversioned"
-            curl -s -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary @"dist/$unversioned" \
-              "${upload_url}?name=${unversioned}&label=${unversioned}"
-          done
-
-      - name: Trigger APT repo update
-        if: steps.check.outputs.skip != 'true'
-        env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          curl -s -X POST \
-            -H "Authorization: token $HOMEBREW_TAP_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/chenyhd/apt-repo/dispatches" \
-            -d "{\"event_type\":\"update-apt-repo\",\"client_payload\":{\"tag\":\"$tag\"}}"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          homebrew_tap_token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: ${{ github.repository }}
 
   cleanup-old-releases:
     needs: [release-self-hosted, release-github-hosted]
-    if: always() && (needs.release-self-hosted.result == 'success' || needs.release-github-hosted.result == 'success')
+    if: |
+      always() && (
+        (needs.release-self-hosted.result == 'success' && needs.release-self-hosted.outputs.skip != 'true') ||
+        (needs.release-github-hosted.result == 'success' && needs.release-github-hosted.outputs.skip != 'true')
+      )
     runs-on: ubuntu-latest
     steps:
       - uses: dev-drprasad/delete-older-releases@v0.3.4

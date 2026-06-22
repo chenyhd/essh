@@ -1,0 +1,86 @@
+name: Release essh
+description: Run goreleaser, upload unversioned assets, and notify the APT repo
+
+inputs:
+  github_token:
+    description: Token with contents:write on this repo
+    required: true
+  homebrew_tap_token:
+    description: PAT with write access to homebrew-tap and apt-repo dispatch
+    required: true
+  repository:
+    description: owner/repo, typically github.repository
+    required: true
+
+outputs:
+  skip:
+    description: true if the release was skipped because the pushed tag is not the highest
+    value: ${{ steps.check.outputs.skip }}
+
+runs:
+  using: composite
+  steps:
+    - name: Skip if not the latest tag
+      id: check
+      shell: bash
+      run: |
+        git fetch --tags --force
+        latest=$(git tag --sort=-v:refname | head -n1)
+        current="${GITHUB_REF#refs/tags/}"
+        if [ "$current" != "$latest" ]; then
+          echo "Skipping: $current is not the latest tag ($latest)"
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - if: steps.check.outputs.skip != 'true'
+      uses: actions/setup-go@v5
+      with:
+        go-version: "1.21"
+
+    - if: steps.check.outputs.skip != 'true'
+      uses: goreleaser/goreleaser-action@v6
+      with:
+        version: latest
+        args: release --clean
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        HOMEBREW_TAP_GITHUB_TOKEN: ${{ inputs.homebrew_tap_token }}
+
+    - name: Upload unversioned assets
+      if: steps.check.outputs.skip != 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        REPOSITORY: ${{ inputs.repository }}
+      run: |
+        set -euo pipefail
+        tag="${GITHUB_REF#refs/tags/}"
+        upload_url=$(curl -fSs -H "Authorization: token $GITHUB_TOKEN" \
+          "https://api.github.com/repos/$REPOSITORY/releases/tags/$tag" \
+          | grep '"upload_url"' | sed 's/.*"\(https.*\){.*/\1/')
+        for f in dist/*.deb dist/*.rpm dist/*.tar.gz dist/*.zip; do
+          [ -f "$f" ] || continue
+          base=$(basename "$f")
+          unversioned=$(echo "$base" | sed "s/_${tag#v}_/_/")
+          cp "$f" "dist/$unversioned"
+          curl -fSs -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"dist/$unversioned" \
+            "${upload_url}?name=${unversioned}&label=${unversioned}"
+        done
+
+    - name: Trigger APT repo update
+      if: steps.check.outputs.skip != 'true'
+      shell: bash
+      env:
+        APT_REPO_TOKEN: ${{ inputs.homebrew_tap_token }}
+      run: |
+        set -euo pipefail
+        tag="${GITHUB_REF#refs/tags/}"
+        curl -fSs -X POST \
+          -H "Authorization: token $APT_REPO_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/chenyhd/apt-repo/dispatches" \
+          -d "{\"event_type\":\"update-apt-repo\",\"client_payload\":{\"tag\":\"$tag\"}}"

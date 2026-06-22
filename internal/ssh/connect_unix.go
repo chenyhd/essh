@@ -72,8 +72,8 @@ func autoReconnect(broker *stdinBroker, host string, port int, user, password st
 	deadline := time.Now().Add(maxAutoRetryDuration)
 
 	for time.Now().Before(deadline) {
-		fmt.Fprintf(os.Stderr, "Reconnecting in %s...\r\n", backoff)
-		time.Sleep(backoff)
+		fmt.Fprintf(os.Stderr, "Reconnecting in %s (Enter to retry now)...\r\n", backoff)
+		broker.sleepOrEnter(backoff)
 
 		fmt.Fprintf(os.Stderr, "Reconnecting to %s@%s:%d...\r\n", user, host, port)
 		start := time.Now()
