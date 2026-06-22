@@ -116,6 +116,9 @@ func runSession(host string, port int, user, password string, fd int) (bool, err
 	}
 	defer client.Close()
 
+	stopKeepAlive := startKeepAlive(client)
+	defer stopKeepAlive()
+
 	session, err := client.NewSession()
 	if err != nil {
 		return true, fmt.Errorf("creating session: %w", err)
