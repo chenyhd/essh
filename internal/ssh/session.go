@@ -88,6 +88,29 @@ func keepAlivePing(client *ssh.Client, timeout time.Duration) error {
 	}
 }
 
+// resetTerminalModes returns the local terminal emulator to a sane state after a
+// session ends. When a connection drops abruptly, the remote shell (and whatever
+// full-screen program it was running — vim, tmux, htop, less) is killed without
+// getting to emit its usual teardown sequences, so the emulator is left with
+// mouse tracking, bracketed paste, or the alternate screen still enabled. Those
+// are properties of the terminal emulator, not the local tty, so term.Restore
+// does not clear them: the next shell prompt then receives mouse motion as
+// literal text like "35;79;46M". Emitting the disable sequences ourselves
+// restores normal input. The sequences are no-ops when the modes are already off,
+// so running this after a clean exit is harmless.
+func resetTerminalModes() {
+	const reset = "\x1b[?1000l" + // disable X10/normal mouse tracking
+		"\x1b[?1002l" + // disable button-event mouse tracking
+		"\x1b[?1003l" + // disable any-event mouse tracking
+		"\x1b[?1006l" + // disable SGR mouse encoding
+		"\x1b[?1015l" + // disable urxvt mouse encoding
+		"\x1b[?2004l" + // disable bracketed paste
+		"\x1b[?1049l" + // leave the alternate screen buffer
+		"\x1b[?25h" + // show the cursor
+		"\x1b[?7h" // re-enable line wrap
+	os.Stdout.WriteString(reset)
+}
+
 // stdinBroker owns os.Stdin for the entire Connect lifetime and hands out the
 // bytes it reads over a single channel. This guarantees there is never more
 // than one consumer of the keyboard at a time: a per-session forwarder while a

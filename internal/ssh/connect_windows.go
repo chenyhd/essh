@@ -193,7 +193,12 @@ func runSession(broker *stdinBroker, host string, port int, user, password strin
 	if err := session.Shell(); err != nil {
 		return true, fmt.Errorf("starting shell: %w", err)
 	}
-	return true, session.Wait()
+	waitErr := session.Wait()
+	// Clear any mouse-tracking / alternate-screen modes a killed remote program
+	// left behind, so the next session (or the local shell on exit) does not
+	// receive mouse events as literal text.
+	resetTerminalModes()
+	return true, waitErr
 }
 
 func isCleanExit(err error) bool {
