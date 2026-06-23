@@ -201,10 +201,13 @@ func runSession(broker *stdinBroker, host string, port int, user, password, comm
 		}
 	}
 	waitErr := session.Wait()
-	// Clear any mouse-tracking / alternate-screen modes a killed remote program
+	// Clear any mouse-tracking / bracketed-paste modes a killed remote program
 	// left behind, so the next session (or the local shell on exit) does not
-	// receive mouse events as literal text.
-	resetTerminalModes()
+	// receive mouse events as literal text. Only force-leave the alternate screen
+	// when the session ended abnormally; on a clean exit the remote program
+	// already did so, and doing it twice scrambles the restored screen.
+	clean := waitErr == nil || isCleanExit(waitErr)
+	resetTerminalModes(!clean)
 	return true, waitErr
 }
 

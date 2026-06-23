@@ -96,19 +96,30 @@ func keepAlivePing(client *ssh.Client, timeout time.Duration) error {
 // are properties of the terminal emulator, not the local tty, so term.Restore
 // does not clear them: the next shell prompt then receives mouse motion as
 // literal text like "35;79;46M". Emitting the disable sequences ourselves
-// restores normal input. The sequences are no-ops when the modes are already off,
-// so running this after a clean exit is harmless.
-func resetTerminalModes() {
+// restores normal input; they are idempotent, so emitting them after a clean
+// exit is harmless.
+//
+// leaveAltScreen must be set ONLY when the session ended abnormally. On a clean
+// exit the remote full-screen program has already emitted its own \x1b[?1049l,
+// which switched back to the normal buffer and restored the pre-program cursor
+// position. Sending a second \x1b[?1049l would trigger another cursor restore to
+// a now-stale saved position — typically the top of the screen — leaving the new
+// shell prompt overlapping the leftover output. So this sequence is reserved for
+// abrupt drops, where the program never got to leave the alternate screen itself.
+func resetTerminalModes(leaveAltScreen bool) {
 	const reset = "\x1b[?1000l" + // disable X10/normal mouse tracking
 		"\x1b[?1002l" + // disable button-event mouse tracking
 		"\x1b[?1003l" + // disable any-event mouse tracking
 		"\x1b[?1006l" + // disable SGR mouse encoding
 		"\x1b[?1015l" + // disable urxvt mouse encoding
 		"\x1b[?2004l" + // disable bracketed paste
-		"\x1b[?1049l" + // leave the alternate screen buffer
 		"\x1b[?25h" + // show the cursor
 		"\x1b[?7h" // re-enable line wrap
-	os.Stdout.WriteString(reset)
+	out := reset
+	if leaveAltScreen {
+		out += "\x1b[?1049l" // leave the alternate screen buffer
+	}
+	os.Stdout.WriteString(out)
 }
 
 // stdinBroker owns os.Stdin for the entire Connect lifetime and hands out the
