@@ -242,6 +242,40 @@ essh -
 
 Quickly reconnect to the last server you connected to.
 
+### 13. tmux sessions
+
+The interactive selector (bare `essh`) goes through tmux by default: pick a host,
+enter the password, and essh lists that host's tmux sessions to attach to.
+
+For the direct forms, add `-t` (or `--tmux`) to manage tmux sessions:
+
+```bash
+essh prod-web -t
+essh - -t          # reconnect last server into tmux
+```
+
+essh lists the host's running tmux sessions and lets you choose:
+
+```
+Select tmux session on prod-web:
+> main           3 windows · attached
+  build          1 window
+  + new session
+  plain shell (no tmux)
+```
+
+- Pick a session to attach to it.
+- **+ new session** prompts for a name (default `main`) and creates it.
+- **plain shell (no tmux)** opens a normal shell — so you always decide whether to use tmux.
+
+Attaching uses `tmux new-session -A`, so it attaches when the session exists and
+creates it otherwise. This pairs with essh's auto-reconnect: if the link drops,
+reconnecting reattaches to the same still-running session instead of starting over.
+
+If the host has tmux installed but no sessions yet, only **+ new session** and
+**plain shell** are shown. If tmux is not installed on the host, essh skips the
+menu entirely and opens a normal shell.
+
 ## Tab Completion
 
 ```bash

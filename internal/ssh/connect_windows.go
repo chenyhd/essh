@@ -15,30 +15,31 @@ import (
 	"golang.org/x/term"
 )
 
-// Connect establishes an SSH connection and starts an interactive shell session.
-// If the connection drops, it auto-reconnects with backoff for up to
-// maxAutoRetryDuration; after that it pauses and waits for the user to press
-// Enter to retry.
-func Connect(host string, port int, user, password string) error {
+// Connect establishes an SSH connection and starts an interactive session.
+// When command is empty an interactive login shell is started; otherwise command
+// is run on the remote (e.g. a tmux attach-or-create command). If the connection
+// drops, it auto-reconnects with backoff for up to maxAutoRetryDuration; after
+// that it pauses and waits for the user to press Enter to retry.
+func Connect(host string, port int, user, password, command string) error {
 	fd := int(os.Stdin.Fd())
 	broker := newStdinBroker()
 
 	for {
-		_, err := runSession(broker, host, port, user, password, fd)
+		_, err := runSession(broker, host, port, user, password, command, fd)
 		if err == nil || isCleanExit(err) {
 			return nil
 		}
 		fmt.Fprintf(os.Stderr, "\r\nConnection lost: %v\r\n", err)
 
-		if err := reconnectLoop(broker, host, port, user, password, fd); err != nil {
+		if err := reconnectLoop(broker, host, port, user, password, command, fd); err != nil {
 			return err
 		}
 	}
 }
 
-func reconnectLoop(broker *stdinBroker, host string, port int, user, password string, fd int) error {
+func reconnectLoop(broker *stdinBroker, host string, port int, user, password, command string, fd int) error {
 	for {
-		err := autoReconnect(broker, host, port, user, password, fd)
+		err := autoReconnect(broker, host, port, user, password, command, fd)
 		if err == nil {
 			return nil
 		}
@@ -51,7 +52,7 @@ func reconnectLoop(broker *stdinBroker, host string, port int, user, password st
 		}
 
 		fmt.Fprintf(os.Stderr, "Reconnecting to %s@%s:%d...\r\n", user, host, port)
-		_, err = runSession(broker, host, port, user, password, fd)
+		_, err = runSession(broker, host, port, user, password, command, fd)
 		if err == nil || isCleanExit(err) {
 			return nil
 		}
@@ -61,7 +62,7 @@ func reconnectLoop(broker *stdinBroker, host string, port int, user, password st
 
 var errAutoRetryExhausted = errors.New("auto-retry exhausted")
 
-func autoReconnect(broker *stdinBroker, host string, port int, user, password string, fd int) error {
+func autoReconnect(broker *stdinBroker, host string, port int, user, password, command string, fd int) error {
 	backoff := time.Second
 	deadline := time.Now().Add(maxAutoRetryDuration)
 
@@ -71,7 +72,7 @@ func autoReconnect(broker *stdinBroker, host string, port int, user, password st
 
 		fmt.Fprintf(os.Stderr, "Reconnecting to %s@%s:%d...\r\n", user, host, port)
 		start := time.Now()
-		connected, err := runSession(broker, host, port, user, password, fd)
+		connected, err := runSession(broker, host, port, user, password, command, fd)
 		if err == nil || isCleanExit(err) {
 			return nil
 		}
@@ -98,7 +99,7 @@ func waitForEnter(broker *stdinBroker, host string, port int, user string) error
 // reports whether Dial succeeded — callers use this to distinguish a failed
 // connection (TCP timeout, host down) from a session that connected and then
 // dropped, since the two have very different retry semantics.
-func runSession(broker *stdinBroker, host string, port int, user, password string, fd int) (bool, error) {
+func runSession(broker *stdinBroker, host string, port int, user, password, command string, fd int) (bool, error) {
 	client, err := Dial(host, port, user, password)
 	if err != nil {
 		return false, err
@@ -190,8 +191,14 @@ func runSession(broker *stdinBroker, host string, port int, user, password strin
 	defer close(sessionDone)
 	go broker.forward(stdin, sessionDone)
 
-	if err := session.Shell(); err != nil {
-		return true, fmt.Errorf("starting shell: %w", err)
+	if command == "" {
+		if err := session.Shell(); err != nil {
+			return true, fmt.Errorf("starting shell: %w", err)
+		}
+	} else {
+		if err := session.Start(command); err != nil {
+			return true, fmt.Errorf("starting command: %w", err)
+		}
 	}
 	waitErr := session.Wait()
 	// Clear any mouse-tracking / alternate-screen modes a killed remote program

@@ -22,7 +22,19 @@ var (
 )
 
 func main() {
-	if len(os.Args) < 2 {
+	// Extract the tmux flag from anywhere in the args; it only affects the
+	// connect paths, so the remaining positional args drive command dispatch.
+	useTmux := false
+	args := make([]string, 0, len(os.Args)-1)
+	for _, a := range os.Args[1:] {
+		if a == "-t" || a == "--tmux" {
+			useTmux = true
+			continue
+		}
+		args = append(args, a)
+	}
+
+	if len(args) == 0 {
 		if err := cmdSelectConnect(); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
@@ -31,7 +43,7 @@ func main() {
 	}
 
 	var err error
-	switch os.Args[1] {
+	switch args[0] {
 	case "init":
 		err = cmdInit()
 	case "add":
@@ -61,10 +73,10 @@ func main() {
 		if name == "" {
 			err = fmt.Errorf("no previous connection")
 		} else {
-			err = cmdConnect(name)
+			err = cmdConnect(name, useTmux)
 		}
 	default:
-		err = cmdConnect(os.Args[1])
+		err = cmdConnect(args[0], useTmux)
 	}
 
 	if err != nil {
@@ -80,6 +92,7 @@ Usage:
   essh                         Select a server interactively
   essh <name>                  Connect to a saved server (prefix match supported)
   essh -                       Reconnect to last server
+  essh <name> -t               Connect and pick a tmux session (-t / --tmux)
   essh init                    Initialize storage with encryption password
   essh add <name> <user@host[:port]>  Add a server
   essh list                    List saved servers
@@ -197,6 +210,10 @@ func verifyWithCache(store *storage.Store, keyfile []byte) ([]byte, error) {
 	return key, nil
 }
 
+// cmdSelectConnect is the interactive selector (bare `essh`): pick a host, enter
+// the encryption password, then choose a tmux session to attach to. The tmux
+// menu always includes a "plain shell" escape, so the session list is offered by
+// default without losing the option to connect without tmux.
 func cmdSelectConnect() error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -254,9 +271,73 @@ func cmdSelectConnect() error {
 		return fmt.Errorf("decrypting password: %w", err)
 	}
 
+	command, err := tmuxCommand(true, srv, sshPassword)
+	if err != nil {
+		return err
+	}
+
 	saveLast(srv.Name)
 	fmt.Printf("Connecting to %s@%s:%d...\n", srv.User, srv.Host, srv.Port)
-	return ssh.Connect(srv.Host, srv.Port, srv.User, sshPassword)
+	return ssh.Connect(srv.Host, srv.Port, srv.User, sshPassword, command)
+}
+
+// tmuxCommand returns the remote command to run for a connection. It returns ""
+// (a plain login shell) when useTmux is false or when tmux is not installed on
+// the host. Otherwise it lists the host's tmux sessions and lets the user pick
+// one to attach, start a new named session, or fall back to a plain shell. All
+// tmux choices use an attach-or-create command so a dropped link reattaches to
+// the same session on auto-reconnect.
+func tmuxCommand(useTmux bool, srv *storage.Server, sshPassword string) (string, error) {
+	if !useTmux {
+		return "", nil
+	}
+
+	sessions, available, err := ssh.ListTmuxSessions(srv.Host, srv.Port, srv.User, sshPassword)
+	if err != nil {
+		return "", err
+	}
+	// tmux is not installed on the host — just open a normal shell.
+	if !available {
+		return "", nil
+	}
+
+	items := make([]prompt.SelectItem, 0, len(sessions)+2)
+	for _, s := range sessions {
+		unit := " windows"
+		if s.Windows == "1" {
+			unit = " window"
+		}
+		desc := s.Windows + unit
+		if s.Attached {
+			desc += " · attached"
+		}
+		items = append(items, prompt.SelectItem{Label: s.Name, Desc: desc})
+	}
+	newIdx := len(items)
+	items = append(items, prompt.SelectItem{Label: "+ new session", Desc: ""})
+	plainIdx := len(items)
+	items = append(items, prompt.SelectItem{Label: "plain shell (no tmux)", Desc: ""})
+
+	idx, err := prompt.Select("Select tmux session on "+srv.Name+":", items, 0)
+	if err != nil {
+		return "", err
+	}
+
+	switch idx {
+	case plainIdx:
+		return "", nil
+	case newIdx:
+		name, err := prompt.ReadLine("New session name [main]: ")
+		if err != nil {
+			return "", err
+		}
+		if name == "" {
+			name = "main"
+		}
+		return ssh.TmuxAttachCommand(name), nil
+	default:
+		return ssh.TmuxAttachCommand(sessions[idx].Name), nil
+	}
 }
 
 func cmdInit() error {
@@ -874,7 +955,7 @@ func splitScpArg(arg string) (name, path string) {
 	return arg[:idx], arg[idx+1:]
 }
 
-func cmdConnect(name string) error {
+func cmdConnect(name string, useTmux bool) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("not initialized — run 'essh init' first")
@@ -923,9 +1004,14 @@ func cmdConnect(name string) error {
 		return fmt.Errorf("decrypting password: %w", err)
 	}
 
+	command, err := tmuxCommand(useTmux, srv, sshPassword)
+	if err != nil {
+		return err
+	}
+
 	saveLast(srv.Name)
 	fmt.Printf("Connecting to %s@%s:%d...\n", srv.User, srv.Host, srv.Port)
-	return ssh.Connect(srv.Host, srv.Port, srv.User, sshPassword)
+	return ssh.Connect(srv.Host, srv.Port, srv.User, sshPassword, command)
 }
 
 func parseTarget(target string) (user, host string, port int, err error) {
