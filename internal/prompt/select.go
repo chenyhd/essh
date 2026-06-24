@@ -95,7 +95,11 @@ func Select(label string, items []SelectItem, defaultIdx int) (int, error) {
 			if err != nil {
 				return -1, err
 			}
-			if b2 == '[' {
+			// Arrow keys arrive as ESC [ A/B (normal cursor keys) or ESC O A/B
+			// (application cursor keys, DECCKM). A full-screen program killed by an
+			// abrupt disconnect can leave the terminal in application mode, so accept
+			// both introducers rather than silently dropping the arrow keys.
+			if b2 == '[' || b2 == 'O' {
 				b3, err := readByte()
 				if err != nil {
 					return -1, err

@@ -113,6 +113,9 @@ func resetTerminalModes(leaveAltScreen bool) {
 		"\x1b[?1006l" + // disable SGR mouse encoding
 		"\x1b[?1015l" + // disable urxvt mouse encoding
 		"\x1b[?2004l" + // disable bracketed paste
+		"\x1b[?1l" + // restore normal cursor keys (DECCKM): a killed full-screen
+		// program (vim, tmux, less) never emits this, leaving the emulator in
+		// application mode where arrow keys send ESC O A/B instead of ESC [ A/B
 		"\x1b[?25h" + // show the cursor
 		"\x1b[?7h" // re-enable line wrap
 	out := reset
