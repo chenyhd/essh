@@ -952,7 +952,18 @@ func splitScpArg(arg string) (name, path string) {
 	if idx < 1 {
 		return "", arg
 	}
+	// A single letter followed by a backslash is a Windows drive path (C:\Users),
+	// not a "name:path" remote spec — a backslash never separates a remote path, so
+	// this is unambiguous. Treat it as local. (Use C:\ rather than C:/ on Windows to
+	// disambiguate from a one-letter server name like "a:/var".)
+	if idx == 1 && len(arg) > 2 && arg[2] == '\\' && isLetter(arg[0]) {
+		return "", arg
+	}
 	return arg[:idx], arg[idx+1:]
+}
+
+func isLetter(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
 
 func cmdConnect(name string, useTmux bool) error {

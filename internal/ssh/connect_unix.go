@@ -154,17 +154,32 @@ func runSession(broker *stdinBroker, host string, port int, user, password, comm
 	signal.Notify(sigCh, syscall.SIGWINCH, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
 
+	// sigDone stops the handler goroutine when the session ends. signal.Stop only
+	// halts delivery; it does not close sigCh, so without this the goroutine would
+	// block on the channel forever and leak — one per session, accumulating across
+	// every auto-reconnect.
+	sigDone := make(chan struct{})
+	defer close(sigDone)
 	go func() {
-		for sig := range sigCh {
-			switch sig {
-			case syscall.SIGWINCH:
-				w, h, err := term.GetSize(fd)
-				if err == nil {
-					session.WindowChange(h, w)
+		for {
+			select {
+			case <-sigDone:
+				return
+			case sig := <-sigCh:
+				switch sig {
+				case syscall.SIGWINCH:
+					w, h, err := term.GetSize(fd)
+					if err == nil {
+						session.WindowChange(h, w)
+					}
+				case syscall.SIGINT, syscall.SIGTERM:
+					// Treat a kill like an abrupt drop: restore the tty and clear any
+					// alternate-screen / mouse / cursor-key modes a full-screen remote
+					// program left set, so the shell we exit to is usable.
+					term.Restore(fd, oldState)
+					resetTerminalModes(true)
+					os.Exit(0)
 				}
-			case syscall.SIGINT, syscall.SIGTERM:
-				term.Restore(fd, oldState)
-				os.Exit(0)
 			}
 		}
 	}()
