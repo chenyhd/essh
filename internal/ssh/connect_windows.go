@@ -22,24 +22,41 @@ import (
 // that it pauses and waits for the user to press Enter to retry.
 func Connect(host string, port int, user, password, command string) error {
 	fd := int(os.Stdin.Fd())
+
+	// Put the console into raw mode for the whole Connect lifetime, BEFORE the
+	// stdin broker starts reading. On Windows the console mode that a ReadConsole
+	// call uses is captured the instant the read begins; if the broker's first
+	// read starts while the console is still in the default line/echo mode, that
+	// read stays line-buffered — echoing locally and only returning on Enter —
+	// even after a later MakeRaw. The result is that keystrokes are never
+	// forwarded to the remote and the shell looks frozen until the first Enter.
+	// Setting raw mode here, before newStdinBroker(), guarantees the very first
+	// read sees raw + ENABLE_VIRTUAL_TERMINAL_INPUT. oldState is the original
+	// (cooked) state, restored on exit and by the SIGINT/SIGTERM handler.
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		return fmt.Errorf("setting raw mode: %w", err)
+	}
+	defer term.Restore(fd, oldState)
+
 	broker := newStdinBroker()
 
 	for {
-		_, err := runSession(broker, host, port, user, password, command, fd)
+		_, err := runSession(broker, host, port, user, password, command, fd, oldState)
 		if err == nil || isCleanExit(err) {
 			return nil
 		}
 		fmt.Fprintf(os.Stderr, "\r\nConnection lost: %v\r\n", err)
 
-		if err := reconnectLoop(broker, host, port, user, password, command, fd); err != nil {
+		if err := reconnectLoop(broker, host, port, user, password, command, fd, oldState); err != nil {
 			return err
 		}
 	}
 }
 
-func reconnectLoop(broker *stdinBroker, host string, port int, user, password, command string, fd int) error {
+func reconnectLoop(broker *stdinBroker, host string, port int, user, password, command string, fd int, oldState *term.State) error {
 	for {
-		err := autoReconnect(broker, host, port, user, password, command, fd)
+		err := autoReconnect(broker, host, port, user, password, command, fd, oldState)
 		if err == nil {
 			return nil
 		}
@@ -52,7 +69,7 @@ func reconnectLoop(broker *stdinBroker, host string, port int, user, password, c
 		}
 
 		fmt.Fprintf(os.Stderr, "Reconnecting to %s@%s:%d...\r\n", user, host, port)
-		_, err = runSession(broker, host, port, user, password, command, fd)
+		_, err = runSession(broker, host, port, user, password, command, fd, oldState)
 		if err == nil || isCleanExit(err) {
 			return nil
 		}
@@ -62,7 +79,7 @@ func reconnectLoop(broker *stdinBroker, host string, port int, user, password, c
 
 var errAutoRetryExhausted = errors.New("auto-retry exhausted")
 
-func autoReconnect(broker *stdinBroker, host string, port int, user, password, command string, fd int) error {
+func autoReconnect(broker *stdinBroker, host string, port int, user, password, command string, fd int, oldState *term.State) error {
 	backoff := time.Second
 	deadline := time.Now().Add(maxAutoRetryDuration)
 
@@ -72,7 +89,7 @@ func autoReconnect(broker *stdinBroker, host string, port int, user, password, c
 
 		fmt.Fprintf(os.Stderr, "Reconnecting to %s@%s:%d...\r\n", user, host, port)
 		start := time.Now()
-		connected, err := runSession(broker, host, port, user, password, command, fd)
+		connected, err := runSession(broker, host, port, user, password, command, fd, oldState)
 		if err == nil || isCleanExit(err) {
 			return nil
 		}
@@ -99,7 +116,7 @@ func waitForEnter(broker *stdinBroker, host string, port int, user string) error
 // reports whether Dial succeeded — callers use this to distinguish a failed
 // connection (TCP timeout, host down) from a session that connected and then
 // dropped, since the two have very different retry semantics.
-func runSession(broker *stdinBroker, host string, port int, user, password, command string, fd int) (bool, error) {
+func runSession(broker *stdinBroker, host string, port int, user, password, command string, fd int, oldState *term.State) (bool, error) {
 	client, err := Dial(host, port, user, password)
 	if err != nil {
 		return false, err
@@ -115,11 +132,10 @@ func runSession(broker *stdinBroker, host string, port int, user, password, comm
 	}
 	defer session.Close()
 
-	oldState, err := term.MakeRaw(fd)
-	if err != nil {
-		return true, fmt.Errorf("setting raw mode: %w", err)
-	}
-	defer term.Restore(fd, oldState)
+	// The console is already in raw mode for the whole Connect lifetime (set in
+	// Connect before the stdin broker started reading), so no per-session
+	// MakeRaw/Restore here — toggling it back to cooked between reconnects would
+	// re-introduce the line-buffered-first-read bug on the next session.
 
 	// On Windows, term.GetSize calls GetConsoleScreenBufferInfo, which only
 	// accepts a screen-buffer (stdout) handle — passing stdin's fd would fail.
